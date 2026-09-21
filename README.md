@@ -1,5 +1,7 @@
 # Media server
 
+Checkout this complete [instruction](https://gist.github.com/loggedbytucker-blip/5d131f1ccf90c9f4e945ff23b1586d56), parts of this project were repurposed from that gist
+
 ### This project mashes together immich/jellyfin/samba in one compose file for ease of use
 
 Checkout .env.example for required env variables
