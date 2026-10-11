@@ -16,6 +16,9 @@ services:
       - IMMICH_VERSION=${IMMICH_VERSION}
     ports:
       - '2283:2283'
+    devices:
+      # Intel iGPU (Quick Sync) for hardware video transcoding
+      - /dev/dri:/dev/dri
     depends_on:
       - redis
       - database
@@ -69,6 +72,12 @@ services:
     container_name: jellyfin
     user: "${UID}:${GID}"
     network_mode: host
+    devices:
+      # Intel iGPU (Quick Sync) for hardware transcoding
+      - /dev/dri:/dev/dri
+    group_add:
+      # GID of the server's "render" group, so Jellyfin may use the iGPU
+      - "${RENDER_GID}"
     volumes:
       - ${APPDATA_LOCATION}/jellyfin/config:/config
       - ${APPDATA_LOCATION}/jellyfin/cache:/cache
