@@ -55,7 +55,6 @@ services:
       POSTGRES_USER: ${IMMICH_DB_USERNAME}
       POSTGRES_DB: ${IMMICH_DB_DATABASE_NAME}
       POSTGRES_INITDB_ARGS: '--data-checksums'
-      DB_STORAGE_TYPE: 'HDD'
     volumes:
       - ${IMMICH_DB_DATA_LOCATION}:/var/lib/postgresql/data
     shm_size: 128mb
@@ -71,8 +70,8 @@ services:
     user: "${UID}:${GID}"
     network_mode: host
     volumes:
-      - ./jellyfin/config:/config
-      - ./jellyfin/cache:/cache
+      - ${APPDATA_LOCATION}/jellyfin/config:/config
+      - ${APPDATA_LOCATION}/jellyfin/cache:/cache
       - ${JELLYFIN_MEDIA_LOCATION}:/media:ro
     environment:
       - TZ=${TZ}
@@ -80,35 +79,23 @@ services:
   # ============== JELLYFIN =============
 
   # =============== SAMBA ===============
-  samba-config:
-    image: alpine
-    container_name: samba-config
-    environment:
-      - SAMBA_NAME=${SAMBA_NAME}
-      - SAMBA_SHARE_PATH=${SAMBA_SHARE_PATH}
-      - USER_NAME=${USER_NAME}
-    volumes:
-      - ./samba:/work
-    command: >
-      sh -c "apk add --no-cache gettext &&
-             envsubst '$$SAMBA_NAME $$SAMBA_SHARE_PATH $$USER_NAME'
-               < /work/smb.conf.template > /work/smb.conf"
-  
   samba:
     image: dockurr/samba
     container_name: samba
-    depends_on:
-      samba-config:
-        condition: service_completed_successfully
     environment:
       - NAME=${SAMBA_NAME}
       - USER=${SAMBA_USER}
       - PASS=${SAMBA_PASS}
+      - UID=${UID}
+      - GID=${GID}
     ports:
       - 445:445
     volumes:
-      - ./data:/shared
-      - ./samba/smb.conf:/etc/samba/smb.conf
+      - ${SAMBA_SHARE_PATH}:/media
+      - ${SAMBA_STORAGE_PATH}:/storage:ro
+    configs:
+      - source: smb_conf
+        target: /etc/samba/smb.conf
     restart: always
   # =============== SAMBA ===============
 
@@ -134,11 +121,11 @@ services:
       # Set a password to access the web interface. Not setting one will result in a random password being assigned
       - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD}
       # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
-      - FTLCONF_dns_listeningMode='ALL'
+      - FTLCONF_dns_listeningMode=all
     # Volumes store your data between container upgrades
     volumes:
       # For persisting Pi-hole's databases and common configuration file
-      - './etc-pihole:/etc/pihole'
+      - ${APPDATA_LOCATION}/pihole:/etc/pihole
       # Uncomment the below if you have custom dnsmasq config files that you want to persist. Not needed for most starting fresh with Pi-hole v6. If you're upgrading from v5 you and have used this directory before, you should keep it enabled for the first v6 container start to allow for a complete migration. It can be removed afterwards. Needs environment variable FTLCONF_misc_etc_dnsmasq_d: 'true'
       #- './etc-dnsmasq.d:/etc/dnsmasq.d'
     cap_add:
@@ -161,7 +148,7 @@ services:
   #     - TS_AUTHKEY=${TS_AUTHKEY}
   #     - TS_STATE_DIR=/var/lib/tailscale
   #   volumes:
-  #     - ./tailscale-state:/var/lib/tailscale
+  #     - ${APPDATA_LOCATION}/tailscale:/var/lib/tailscale
   #   cap_add:
   #     - net_admin
   #     - net_raw
@@ -179,3 +166,23 @@ services:
 
 volumes:
   model-cache:
+
+configs:
+  smb_conf:
+    content: |
+      [${SAMBA_NAME}]
+         path = /media
+         browseable = yes
+         read only = no
+         guest ok = no
+         valid users = ${SAMBA_USER}
+         force user = ${SAMBA_USER}
+         create mask = 0664
+         directory mask = 0775
+
+      [storage]
+         path = /storage
+         browseable = yes
+         read only = yes
+         guest ok = no
+         valid users = ${SAMBA_USER}
