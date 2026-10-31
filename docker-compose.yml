@@ -116,10 +116,9 @@ services:
       # DNS Ports
       - "53:53/tcp"
       - "53:53/udp"
-      # Default HTTP Port
-      - "80:80/tcp"
-      # Default HTTPs Port. FTL will generate a self-signed certificate
-      - "443:443/tcp"
+      # Web UI: served through Caddy at http://pihole.${LAN_DOMAIN}
+      # Direct fallback if Caddy is down: http://${SERVER_IP}:8081/admin
+      - "8081:80/tcp"
       # Uncomment the line below if you are using Pi-hole as your DHCP server
       #- "67:67/udp"
       # Uncomment the line below if you are using Pi-hole as your NTP server
@@ -131,6 +130,8 @@ services:
       - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD}
       # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
       - FTLCONF_dns_listeningMode=all
+      # Local DNS records for the reverse proxy (managed here, read-only in the web UI)
+      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN}
     # Volumes store your data between container upgrades
     volumes:
       # For persisting Pi-hole's databases and common configuration file
@@ -148,10 +149,51 @@ services:
     restart: unless-stopped
   # ============== PIHOLE ===============
 
+  # =============== CADDY ===============
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    ports:
+      - "80:80"
+    extra_hosts:
+      # Lets Caddy reach Jellyfin, which runs on the host network
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${APPDATA_LOCATION}/caddy/data:/data
+      - ${APPDATA_LOCATION}/caddy/config:/config
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    depends_on:
+      - pihole
+      - immich-server
+    restart: unless-stopped
+  # =============== CADDY ===============
+
 volumes:
   model-cache:
 
 configs:
+  caddyfile:
+    content: |
+      {
+          # Local-only names: plain HTTP, no certificates
+          auto_https off
+      }
+
+      http://pihole.${LAN_DOMAIN} {
+          redir / /admin/ 302
+          reverse_proxy pihole:80
+      }
+
+      http://jellyfin.${LAN_DOMAIN} {
+          reverse_proxy host.docker.internal:8096
+      }
+
+      http://immich.${LAN_DOMAIN} {
+          reverse_proxy immich-server:2283
+      }
+
   smb_conf:
     content: |
       [global]
