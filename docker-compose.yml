@@ -206,7 +206,7 @@ configs:
           reverse_proxy immich-server:2283
       }
 
-      http://pufferpannel.${LAN_DOMAIN} {
+      http://games.${LAN_DOMAIN} {
           reverse_proxy host.docker.internal:8080
       }
 
