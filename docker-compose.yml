@@ -131,7 +131,7 @@ services:
       # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
       - FTLCONF_dns_listeningMode=all
       # Local DNS records for the reverse proxy (managed here, read-only in the web UI)
-      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN}
+      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN};${SERVER_IP} games.${LAN_DOMAIN}
     # Volumes store your data between container upgrades
     volumes:
       # For persisting Pi-hole's databases and common configuration file
@@ -148,6 +148,18 @@ services:
       - SYS_NICE
     restart: unless-stopped
   # ============== PIHOLE ===============
+
+  # ============ PUFFERPANEL ============
+  pufferpanel:
+    image: pufferpanel/pufferpanel:latest
+    container_name: pufferpanel
+    network_mode: host
+    volumes:
+      - ${APPDATA_LOCATION}/pufferpanel/config:/etc/pufferpanel
+      - /var/lib/pufferpanel:/var/lib/pufferpanel
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+  # ============ PUFFERPANEL ============
 
   # =============== CADDY ===============
   caddy:
@@ -192,6 +204,10 @@ configs:
 
       http://immich.${LAN_DOMAIN} {
           reverse_proxy immich-server:2283
+      }
+
+      http://pufferpannel.${LAN_DOMAIN} {
+          reverse_proxy host.docker.internal:8080
       }
 
   smb_conf:
