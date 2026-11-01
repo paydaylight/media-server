@@ -19,3 +19,9 @@ docker compose up -d
 Tailscale is the only app that is not containerised - it is much easier to install on host machine compared to nginx-sidecar approach in compose file
 
 [How to install tailscale](https://tailscale.com/docs/how-to/quickstart)
+
+Sideload Jellyfin app on Tizen (Samsung TV)
+
+docker run --rm ghcr.io/georift/install-jellyfin-tizen <TV_IP>
+
+Developer mode is required
