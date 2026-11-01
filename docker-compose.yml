@@ -131,7 +131,7 @@ services:
       # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
       - FTLCONF_dns_listeningMode=all
       # Local DNS records for the reverse proxy (managed here, read-only in the web UI)
-      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN};${SERVER_IP} games.${LAN_DOMAIN}
+      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN};${SERVER_IP} games.${LAN_DOMAIN};${SERVER_IP} qbittorrent.${LAN_DOMAIN};${SERVER_IP} prowlarr.${LAN_DOMAIN};${SERVER_IP} radarr.${LAN_DOMAIN};${SERVER_IP} sonarr.${LAN_DOMAIN};${SERVER_IP} requests.${LAN_DOMAIN}
     # Volumes store your data between container upgrades
     volumes:
       # For persisting Pi-hole's databases and common configuration file
@@ -160,6 +160,85 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
   # ============ PUFFERPANEL ============
+
+  # ============== DOWNLOADS ==============
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=${UID}
+      - PGID=${GID}
+      - TZ=${TZ}
+      - WEBUI_PORT=8085
+      - TORRENTING_PORT=6881
+    volumes:
+      - ${APPDATA_LOCATION}/qbittorrent:/config
+      - ${MEDIA_LOCATION}/downloads:/media/downloads
+    ports:
+      - 8085:8085
+      - 6881:6881
+      - 6881:6881/udp
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID=${UID}
+      - PGID=${GID}
+      - TZ=${TZ}
+    volumes:
+      - ${APPDATA_LOCATION}/prowlarr:/config
+    ports:
+      - 9696:9696
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=${UID}
+      - PGID=${GID}
+      - TZ=${TZ}
+    volumes:
+      - ${APPDATA_LOCATION}/radarr:/config
+      - ${MEDIA_LOCATION}:/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=${UID}
+      - PGID=${GID}
+      - TZ=${TZ}
+    volumes:
+      - ${APPDATA_LOCATION}/sonarr:/config
+      - ${MEDIA_LOCATION}:/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ${APPDATA_LOCATION}/seerr:/app/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 5055:5055
+    restart: unless-stopped
+  # ============== DOWNLOADS ==============
 
   # =============== CADDY ===============
   caddy:
@@ -208,6 +287,29 @@ configs:
 
       http://games.${LAN_DOMAIN} {
           reverse_proxy host.docker.internal:8080
+      }
+
+      http://qbittorrent.${LAN_DOMAIN} {
+          reverse_proxy qbittorrent:8085 {
+              header_up Host {upstream_hostport}
+              header_up X-Forwarded-Host {host}
+          }
+      }
+
+      http://prowlarr.${LAN_DOMAIN} {
+          reverse_proxy prowlarr:9696
+      }
+
+      http://radarr.${LAN_DOMAIN} {
+          reverse_proxy radarr:7878
+      }
+
+      http://sonarr.${LAN_DOMAIN} {
+          reverse_proxy sonarr:8989
+      }
+
+      http://requests.${LAN_DOMAIN} {
+          reverse_proxy seerr:5055
       }
 
   smb_conf:
