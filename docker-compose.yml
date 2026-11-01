@@ -187,6 +187,7 @@ services:
       - PUID=${UID}
       - PGID=${GID}
       - TZ=${TZ}
+      - PROWLARR__SERVER__ALLOWEDHOSTS=prowlarr,prowlarr.${LAN_DOMAIN},${SERVER_IP}
     volumes:
       - ${APPDATA_LOCATION}/prowlarr:/config
     ports:
@@ -208,6 +209,7 @@ services:
       - PUID=${UID}
       - PGID=${GID}
       - TZ=${TZ}
+      - RADARR__SERVER__ALLOWEDHOSTS=radarr,radarr.${LAN_DOMAIN},${SERVER_IP}
     volumes:
       - ${APPDATA_LOCATION}/radarr:/config
       - ${MEDIA_LOCATION}:/media
@@ -224,6 +226,7 @@ services:
       - PUID=${UID}
       - PGID=${GID}
       - TZ=${TZ}
+      - SONARR__SERVER__ALLOWEDHOSTS=sonarr,sonarr.${LAN_DOMAIN},${SERVER_IP}
     volumes:
       - ${APPDATA_LOCATION}/sonarr:/config
       - ${MEDIA_LOCATION}:/media
