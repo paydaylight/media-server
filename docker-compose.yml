@@ -131,7 +131,7 @@ services:
       # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
       - FTLCONF_dns_listeningMode=all
       # Local DNS records for the reverse proxy (managed here, read-only in the web UI)
-      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN};${SERVER_IP} games.${LAN_DOMAIN};${SERVER_IP} qbittorrent.${LAN_DOMAIN};${SERVER_IP} prowlarr.${LAN_DOMAIN};${SERVER_IP} radarr.${LAN_DOMAIN};${SERVER_IP} sonarr.${LAN_DOMAIN};${SERVER_IP} requests.${LAN_DOMAIN}
+      - FTLCONF_dns_hosts=${SERVER_IP} homeserver.${LAN_DOMAIN};${SERVER_IP} pihole.${LAN_DOMAIN};${SERVER_IP} jellyfin.${LAN_DOMAIN};${SERVER_IP} immich.${LAN_DOMAIN};${SERVER_IP} games.${LAN_DOMAIN};${SERVER_IP} qbittorrent.${LAN_DOMAIN};${SERVER_IP} prowlarr.${LAN_DOMAIN};${SERVER_IP} radarr.${LAN_DOMAIN};${SERVER_IP} sonarr.${LAN_DOMAIN};${SERVER_IP} requests.${LAN_DOMAIN};${SERVER_IP} scrutiny.${LAN_DOMAIN};${SERVER_IP} status.${LAN_DOMAIN};${SERVER_IP} resources.${LAN_DOMAIN};${SERVER_IP} home.${LAN_DOMAIN}
     # Volumes store your data between container upgrades
     volumes:
       # For persisting Pi-hole's databases and common configuration file
@@ -240,6 +240,102 @@ services:
     restart: unless-stopped
   # ============== DOWNLOADS ==============
 
+  # ============= MONITORING ==============
+  scrutiny:
+    # Drive health (SMART) dashboard with history and alerts
+    image: ghcr.io/analogj/scrutiny:master-omnibus
+    container_name: scrutiny
+    cap_add:
+      - SYS_RAWIO   # read SMART data from SATA drives
+      - SYS_ADMIN   # read SMART data from NVMe drives
+    devices:
+      - ${SCRUTINY_DISK_1}
+      - ${SCRUTINY_DISK_2}
+      - ${SCRUTINY_DISK_3}
+      - ${SCRUTINY_DISK_4}
+      - ${SCRUTINY_DISK_5}
+    volumes:
+      - /run/udev:/run/udev:ro
+      - ${APPDATA_LOCATION}/scrutiny/config:/opt/scrutiny/config
+      - ${APPDATA_LOCATION}/scrutiny/influxdb:/opt/scrutiny/influxdb
+    ports:
+      - 8082:8080
+    restart: unless-stopped
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    container_name: uptime-kuma
+    volumes:
+      - ${APPDATA_LOCATION}/uptime-kuma:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 3001:3001
+    restart: unless-stopped
+
+  beszel:
+    # Resource dashboard (CPU, RAM, disks, network, temps, per-container usage)
+    image: henrygd/beszel:latest
+    container_name: beszel
+    environment:
+      - APP_URL=http://resources.${LAN_DOMAIN}
+    volumes:
+      - ${APPDATA_LOCATION}/beszel/data:/beszel_data
+      - ${APPDATA_LOCATION}/beszel/socket:/beszel_socket
+    ports:
+      - 8090:8090
+    restart: unless-stopped
+
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    network_mode: host
+    environment:
+      - LISTEN=/beszel_socket/beszel.sock
+      - HUB_URL=http://localhost:8090
+      - TOKEN=${BESZEL_TOKEN}
+      - KEY=${BESZEL_KEY}
+    volumes:
+      - ${APPDATA_LOCATION}/beszel/agent:/var/lib/beszel-agent
+      - ${APPDATA_LOCATION}/beszel/socket:/beszel_socket
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${STORAGE_LOCATION}:/extra-filesystems/storage:ro
+      - ${MEDIA_LOCATION}:/extra-filesystems/media:ro
+    restart: unless-stopped
+  # ============= MONITORING ==============
+
+  # ============== DASHBOARD ==============
+  homepage:
+    # One start page with live widgets for every service
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    environment:
+      - HOMEPAGE_ALLOWED_HOSTS=home.${LAN_DOMAIN},${SERVER_IP}:3000
+      - LOG_TARGETS=stdout
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${APPDATA_LOCATION}/homepage/images:/app/public/images:ro
+    configs:
+      - source: homepage_settings
+        target: /app/config/settings.yaml
+      - source: homepage_services
+        target: /app/config/services.yaml
+      - source: homepage_widgets
+        target: /app/config/widgets.yaml
+      - source: homepage_docker
+        target: /app/config/docker.yaml
+      - source: homepage_bookmarks
+        target: /app/config/bookmarks.yaml
+      - source: homepage_css
+        target: /app/config/custom.css
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+  # ============== DASHBOARD ==============
+
   # =============== CADDY ===============
   caddy:
     image: caddy:2
@@ -265,6 +361,192 @@ volumes:
   model-cache:
 
 configs:
+  homepage_settings:
+    content: |
+      title: Home server
+      theme: dark
+      color: slate
+      headerStyle: clean
+      cardBlur: sm
+      background:
+        image: /images/background.jpg
+        blur: md
+        saturate: 75
+        brightness: 50
+        opacity: 100
+      layout:
+        Monitoring:
+          style: row
+          columns: 3
+        Media:
+          style: row
+          columns: 3
+        Downloads:
+          style: row
+          columns: 4
+        Network & tools:
+          style: row
+          columns: 3
+
+  homepage_css:
+    content: |
+      .rounded-md, .rounded {
+          border-radius: 15px !important;
+      }
+
+      /* Service items subtle drop shadow */
+      .service > div {
+          box-shadow: 0 0px 6px -1px var(--tw-shadow-color, #0000001a),
+                      0 0px 4px 0px var(--tw-shadow-color, #0000001a);
+      }
+
+  homepage_bookmarks:
+    content: |
+      []
+
+  homepage_docker:
+    content: |
+      ${HOMEPAGE_DOCKER_SERVER}:
+        socket: /var/run/docker.sock
+
+  homepage_widgets:
+    content: |
+      - resources:
+          label: Server
+          cpu: true
+          memory: true
+          uptime: true
+      - datetime:
+          text_size: md
+          format:
+            dateStyle: long
+            timeStyle: short
+            hour12: false
+
+  homepage_services:
+    content: |
+      - Monitoring:
+          - Uptime Kuma:
+              icon: uptime-kuma.png
+              href: http://status.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: uptime-kuma
+              widget:
+                type: uptimekuma
+                url: http://uptime-kuma:3001
+                slug: "${HOMEPAGE_KUMA_SLUG}"
+          - Beszel:
+              icon: beszel.png
+              href: http://resources.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: beszel
+              widget:
+                type: beszel
+                url: http://beszel:8090
+                username: "${HOMEPAGE_BESZEL_USER}"
+                password: "${HOMEPAGE_BESZEL_PASS}"
+                version: 2
+          - Scrutiny:
+              icon: scrutiny.png
+              href: http://scrutiny.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: scrutiny
+              widget:
+                type: scrutiny
+                url: http://scrutiny:8080
+
+      - Media:
+          - Jellyfin:
+              icon: jellyfin.png
+              href: http://jellyfin.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: jellyfin
+              widget:
+                type: jellyfin
+                url: http://host.docker.internal:8096
+                key: "${HOMEPAGE_JELLYFIN_KEY}"
+                version: 2   # Jellyfin 10.12+
+                enableBlocks: true
+          - Immich:
+              icon: immich.png
+              href: http://immich.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: immich_server
+              widget:
+                type: immich
+                url: http://immich-server:2283
+                key: "${HOMEPAGE_IMMICH_KEY}"
+                version: 2
+          - Seerr:
+              icon: jellyseerr.png
+              href: http://requests.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: seerr
+              widget:
+                type: seerr
+                url: http://seerr:5055
+                key: "${HOMEPAGE_SEERR_KEY}"
+
+      - Downloads:
+          - Radarr:
+              icon: radarr.png
+              href: http://radarr.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: radarr
+              widget:
+                type: radarr
+                url: http://radarr:7878
+                key: "${HOMEPAGE_RADARR_KEY}"
+          - Sonarr:
+              icon: sonarr.png
+              href: http://sonarr.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: sonarr
+              widget:
+                type: sonarr
+                url: http://sonarr:8989
+                key: "${HOMEPAGE_SONARR_KEY}"
+          - Prowlarr:
+              icon: prowlarr.png
+              href: http://prowlarr.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: prowlarr
+              widget:
+                type: prowlarr
+                url: http://prowlarr:9696
+                key: "${HOMEPAGE_PROWLARR_KEY}"
+          - qBittorrent:
+              icon: qbittorrent.png
+              href: http://qbittorrent.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: qbittorrent
+              widget:
+                type: qbittorrent
+                url: http://qbittorrent:8085
+                username: "${HOMEPAGE_QBIT_USER}"
+                password: "${HOMEPAGE_QBIT_PASS}"
+
+      - Network & tools:
+          - Pi-hole:
+              icon: pi-hole.png
+              href: http://pihole.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: pihole
+              widget:
+                type: pihole
+                url: http://pihole:80
+                version: 6
+                key: "${HOMEPAGE_PIHOLE_KEY}"
+          - PufferPanel:
+              icon: pufferpanel.png
+              href: http://games.${LAN_DOMAIN}
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: pufferpanel
+          - Caddy:
+              icon: caddy.png
+              server: ${HOMEPAGE_DOCKER_SERVER}
+              container: caddy
+
   caddyfile:
     content: |
       {
@@ -310,6 +592,22 @@ configs:
 
       http://requests.${LAN_DOMAIN} {
           reverse_proxy seerr:5055
+      }
+
+      http://scrutiny.${LAN_DOMAIN} {
+          reverse_proxy scrutiny:8080
+      }
+
+      http://status.${LAN_DOMAIN} {
+          reverse_proxy uptime-kuma:3001
+      }
+
+      http://resources.${LAN_DOMAIN} {
+          reverse_proxy beszel:8090
+      }
+
+      http://home.${LAN_DOMAIN} {
+          reverse_proxy homepage:3000
       }
 
   smb_conf:
